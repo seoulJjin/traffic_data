@@ -12,11 +12,7 @@ class RoadTrafficStatus {
     required this.linkCount,
   });
 
-  TrafficLevel get level {
-    if (averageSpeedKmh < 20) return TrafficLevel.congested;
-    if (averageSpeedKmh < 40) return TrafficLevel.slow;
-    return TrafficLevel.smooth;
-  }
+  TrafficLevel get level => TrafficLevel.fromSpeedKmh(averageSpeedKmh);
 }
 
 /// 소통 상태 단계. 임계값은 일반적인 기준을 단순화한 근사치입니다.
@@ -29,4 +25,10 @@ enum TrafficLevel {
   final Color color;
 
   const TrafficLevel(this.label, this.color);
+
+  static TrafficLevel fromSpeedKmh(double speedKmh) {
+    if (speedKmh < 20) return TrafficLevel.congested;
+    if (speedKmh < 40) return TrafficLevel.slow;
+    return TrafficLevel.smooth;
+  }
 }

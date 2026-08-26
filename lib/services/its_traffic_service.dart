@@ -6,6 +6,17 @@ import 'package:http/http.dart' as http;
 import '../models/region.dart';
 import '../models/road_traffic_status.dart';
 
+/// 한 권역에 대한 실시간 교통정보 조회 결과.
+class RegionTrafficData {
+  /// 도로명 기준으로 집계한 평균 소통 상태 (하단 리스트 패널용).
+  final List<RoadTrafficStatus> roadStatuses;
+
+  /// 링크ID(구간) 기준 실시간 속도 (지도 위 구간별 색칠용).
+  final Map<String, double> linkSpeeds;
+
+  const RegionTrafficData({required this.roadStatuses, required this.linkSpeeds});
+}
+
 /// ITS 국가교통정보센터 실시간 교통소통정보 Open API 연동 서비스.
 /// https://www.its.go.kr/opendata/opendataList?service=traffic
 class ItsTrafficService {
@@ -19,11 +30,10 @@ class ItsTrafficService {
     return key;
   }
 
-  /// [region]의 경계 상자 내 실시간 교통정보를 조회하고,
-  /// region.roadNames에 해당하는 도로만 도로명 기준으로 집계해서 반환합니다.
-  Future<List<RoadTrafficStatus>> fetchRegionRoadStatuses(
-    Region region,
-  ) async {
+  /// [region]의 경계 상자 내 실시간 교통정보를 조회합니다.
+  /// - roadStatuses: region.roadNames에 해당하는 도로의 평균 소통 상태
+  /// - linkSpeeds: 조회된 모든 구간의 linkId -> 속도(km/h) (도로명 필터 없음)
+  Future<RegionTrafficData> fetchRegionTrafficData(Region region) async {
     final bbox = region.boundingBox();
     final uri = Uri.parse(_baseUrl).replace(queryParameters: {
       'apiKey': _apiKey,
@@ -50,18 +60,21 @@ class ItsTrafficService {
 
     final targetNames = region.roadNames.toSet();
     final speedsByRoad = <String, List<double>>{};
+    final linkSpeeds = <String, double>{};
 
     for (final item in items) {
-      final roadName = item['roadName'] as String?;
-      if (roadName == null || !targetNames.contains(roadName)) continue;
-
       final speed = double.tryParse((item['speed'] as String?) ?? '');
       if (speed == null) continue;
 
+      final linkId = item['linkId'] as String?;
+      if (linkId != null) linkSpeeds[linkId] = speed;
+
+      final roadName = item['roadName'] as String?;
+      if (roadName == null || !targetNames.contains(roadName)) continue;
       speedsByRoad.putIfAbsent(roadName, () => []).add(speed);
     }
 
-    return [
+    final roadStatuses = [
       for (final roadName in region.roadNames)
         if (speedsByRoad.containsKey(roadName))
           RoadTrafficStatus(
@@ -72,5 +85,7 @@ class ItsTrafficService {
             linkCount: speedsByRoad[roadName]!.length,
           ),
     ];
+
+    return RegionTrafficData(roadStatuses: roadStatuses, linkSpeeds: linkSpeeds);
   }
 }
