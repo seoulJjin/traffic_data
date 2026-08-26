@@ -85,6 +85,40 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Future<void> _goToMyLocation() async {
+    final granted = await _locationService.ensurePermission();
+    if (!granted) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('위치 권한이 필요합니다. 설정에서 허용해주세요.')));
+      return;
+    }
+
+    late final Position position;
+    try {
+      position = await Geolocator.getCurrentPosition();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('현재 위치를 가져오지 못했습니다.')));
+      return;
+    }
+
+    await _onPositionUpdate(position);
+
+    final mapController = _mapController;
+    if (mapController == null) return;
+    await mapController.moveCamera(
+      CameraUpdate.newCenterPosition(
+        LatLng(position.latitude, position.longitude),
+        zoomLevel: 16,
+      ),
+      animation: const CameraAnimation(300),
+    );
+  }
+
   Future<void> _startLocationTracking() async {
     final granted = await _locationService.ensurePermission();
     if (!granted || !mounted) return;
@@ -239,13 +273,27 @@ class _MapScreenState extends State<MapScreen> {
       body: Column(
         children: [
           Expanded(
-            child: KakaoMap(
-              option: KakaoMapOption(
-                position: widget.region.center,
-                zoomLevel: 14,
-                mapType: MapType.normal,
-              ),
-              onMapReady: _onMapReady,
+            child: Stack(
+              children: [
+                KakaoMap(
+                  option: KakaoMapOption(
+                    position: widget.region.center,
+                    zoomLevel: 14,
+                    mapType: MapType.normal,
+                  ),
+                  onMapReady: _onMapReady,
+                ),
+                Positioned(
+                  right: 16,
+                  bottom: 16,
+                  child: FloatingActionButton(
+                    heroTag: 'my_location_button',
+                    onPressed: _goToMyLocation,
+                    tooltip: '현재 위치로 이동',
+                    child: const Icon(Icons.my_location),
+                  ),
+                ),
+              ],
             ),
           ),
           SizedBox(
