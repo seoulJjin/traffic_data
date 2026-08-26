@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 
+import 'screens/region_list_screen.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: '.env');
@@ -25,31 +27,7 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MapScreen(),
-    );
-  }
-}
-
-class MapScreen extends StatelessWidget {
-  const MapScreen({super.key});
-
-  // 서울시청 좌표를 기본 중심으로 사용합니다.
-  static const _seoulCityHall = LatLng(37.5665, 126.9780);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('서울/경기 교통정보')),
-      body: KakaoMap(
-        option: const KakaoMapOption(
-          position: _seoulCityHall,
-          zoomLevel: 14,
-          mapType: MapType.normal,
-        ),
-        onMapReady: (KakaoMapController controller) {
-          debugPrint('카카오 지도가 정상적으로 불러와졌습니다.');
-        },
-      ),
+      home: const RegionListScreen(),
     );
   }
 }
