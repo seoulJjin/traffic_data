@@ -28,4 +28,13 @@ class Region {
       maxY: center.latitude + deltaDegree,
     );
   }
+
+  /// [point]가 이 권역의 경계 상자 안에 있는지 확인합니다.
+  bool contains(LatLng point, {double deltaDegree = 0.06}) {
+    final bbox = boundingBox(deltaDegree: deltaDegree);
+    return point.longitude >= bbox.minX &&
+        point.longitude <= bbox.maxX &&
+        point.latitude >= bbox.minY &&
+        point.latitude <= bbox.maxY;
+  }
 }
