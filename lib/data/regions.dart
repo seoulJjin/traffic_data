@@ -2,7 +2,7 @@ import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 
 import '../models/region.dart';
 
-/// 서울 주요 도로 + 경기 6개 시 권역 목록.
+/// 서울 주요 도로 + 경기 4개 시 권역 목록.
 /// 좌표는 각 지역 시청(또는 대표 지점) 기준입니다.
 const List<Region> regions = [
   Region(
@@ -29,15 +29,5 @@ const List<Region> regions = [
     name: '하남',
     description: '수도권제1순환고속도로, 서울양양고속도로',
     center: LatLng(37.5393, 127.2148), // 하남시청
-  ),
-  Region(
-    name: '구리',
-    description: '수도권제1순환고속도로, 구리포천고속도로',
-    center: LatLng(37.5943, 127.1296), // 구리시청
-  ),
-  Region(
-    name: '남양주',
-    description: '수도권제1순환고속도로, 구리포천고속도로',
-    center: LatLng(37.6360, 127.2165), // 남양주시청
   ),
 ];
