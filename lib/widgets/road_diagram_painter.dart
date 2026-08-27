@@ -129,10 +129,21 @@ class RoadDiagramPainter extends CustomPainter {
       canvas.drawPath(path, paint);
     }
 
-    for (final segment in segments) {
-      if (!segment.congested || segment.points.isEmpty) continue;
-      final mid = segment.points[segment.points.length ~/ 2];
-      _drawWarningTriangle(canvas, projection.project(mid));
+    // 가까운 정체 구간끼리는 삼각형 하나로 묶어서(클러스터링) 화면이 지저분해지지 않게 합니다.
+    final congestedPoints = <Offset>[
+      for (final segment in segments)
+        if (segment.congested && segment.points.isNotEmpty)
+          projection.project(segment.points[segment.points.length ~/ 2]),
+    ];
+    final clusterRadius = math.min(size.width, size.height) * 0.035 + 12;
+    final clusters = <Offset>[];
+    for (final point in congestedPoints) {
+      final hasNearbyCluster =
+          clusters.any((c) => (c - point).distance < clusterRadius);
+      if (!hasNearbyCluster) clusters.add(point);
+    }
+    for (final cluster in clusters) {
+      _drawWarningTriangle(canvas, cluster);
     }
 
     final location = myLocation;
