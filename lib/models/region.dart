@@ -1,4 +1,4 @@
-import 'package:kakao_map_sdk/kakao_map_sdk.dart';
+import 'lat_lng.dart';
 
 /// 사용자가 선택할 수 있는 교통정보 권역(서울 + 경기 4개 시).
 class Region {

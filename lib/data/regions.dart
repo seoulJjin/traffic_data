@@ -1,5 +1,4 @@
-import 'package:kakao_map_sdk/kakao_map_sdk.dart';
-
+import '../models/lat_lng.dart';
 import '../models/region.dart';
 
 /// 서울 주요 도로 + 경기 4개 시 권역 목록.

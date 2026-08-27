@@ -1,19 +1,20 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 
+import '../models/lat_lng.dart';
 import '../models/region.dart';
-import '../models/road_link_geometry.dart';
 import '../models/road_traffic_status.dart';
 import '../services/its_traffic_service.dart';
 import '../services/location_service.dart';
 import '../services/road_geometry_repository.dart';
+import '../widgets/road_diagram_painter.dart';
 
-/// 선택한 권역을 중심으로 카카오맵과 실시간 도로 소통 상태를 보여주는 화면.
-/// 지도 위에는 실제 도로 모양을 따라 구간별 소통 상태 색상 선을 그리고,
-/// 폴리라인은 탭 이벤트를 지원하지 않는 SDK 제약 때문에 도로마다 탭 가능한 마커를 함께 놓습니다.
+/// 선택한 권역의 실시간 도로 소통 상태를, 실제 지도 대신
+/// 도로 모양만 강조한 심플한 다이어그램으로 보여주는 화면.
+/// (교통방송 상황판 스타일: 두꺼운 색상 선 + 정체 구간 경고 삼각형)
 class MapScreen extends StatefulWidget {
   final Region region;
 
@@ -27,87 +28,104 @@ class _MapScreenState extends State<MapScreen> {
   final _trafficService = ItsTrafficService();
   final _geometryRepository = RoadGeometryRepository();
   final _locationService = LocationService();
-
-  // 소통 상태 색상별 마커 아이콘 캐시 (매번 위젯을 이미지로 다시 그리지 않도록).
-  static final Map<Color, Future<KImage>> _markerIconCache = {};
-  static Future<KImage>? _myLocationIconCache;
+  final _transformController = TransformationController();
 
   late Future<RegionTrafficData> _trafficFuture;
-  KakaoMapController? _mapController;
-  ShapeController? _shapeController;
-  LabelController? _labelController;
-  LabelController? _myLocationLayer;
-  Poi? _myLocationPoi;
+  List<RoadSegment> _segments = [];
+  Map<String, RoadTrafficStatus> _statusByRoad = {};
+
   StreamSubscription<Position>? _positionSubscription;
-  bool _isTracking = false;
-  bool _hasFittedCameraToRoads = false;
+  LatLng? _myLocation;
+  double? _myHeading;
+  String? _focusedRoadName;
 
   @override
   void initState() {
     super.initState();
-    _trafficFuture = _trafficService.fetchRegionTrafficData(widget.region);
+    _trafficFuture = _load();
+    _startLocationTracking();
   }
 
   @override
   void dispose() {
     _positionSubscription?.cancel();
+    _transformController.dispose();
     super.dispose();
   }
 
-  /// 카카오맵 SDK는 onMapReady 직후 잠깐 동안 레이어 생성(addShapeLayer 등)이
-  /// 네이티브 쪽 초기화 타이밍 문제로 실패(getLayer(...) must not be null)할 수 있어,
-  /// 짧은 간격으로 재시도합니다.
-  Future<T> _retryOnFailure<T>(
-    Future<T> Function() action, {
-    int retries = 6,
-    Duration delay = const Duration(milliseconds: 250),
-  }) async {
-    for (var attempt = 1; attempt <= retries; attempt++) {
-      try {
-        return await action();
-      } catch (e) {
-        if (attempt == retries) rethrow;
-        await Future.delayed(delay);
+  Future<RegionTrafficData> _load() async {
+    final links = await _geometryRepository.geometriesFor(widget.region.roadNames);
+
+    // 실시간 조회 범위를 화면에 그려질 도로 구간 전체를 덮도록 잡습니다.
+    // (권역 중심 반경만 쓰면 올림픽대로처럼 넓게 퍼진 도로의 먼 구간은 조회에서 빠짐)
+    double? minLat, maxLat, minLng, maxLng;
+    for (final (_, link) in links) {
+      for (final point in link.points) {
+        minLat = (minLat == null || point.latitude < minLat) ? point.latitude : minLat;
+        maxLat = (maxLat == null || point.latitude > maxLat) ? point.latitude : maxLat;
+        minLng = (minLng == null || point.longitude < minLng) ? point.longitude : minLng;
+        maxLng = (maxLng == null || point.longitude > maxLng) ? point.longitude : maxLng;
       }
     }
-    throw StateError('unreachable');
+    final bbox = minLat == null
+        ? null
+        : (minX: minLng!, maxX: maxLng!, minY: minLat, maxY: maxLat!);
+
+    final traffic =
+        await _trafficService.fetchRegionTrafficData(widget.region, bbox: bbox);
+    final statusByRoad = {for (final s in traffic.roadStatuses) s.roadName: s};
+
+    if (!mounted) return traffic;
+    setState(() {
+      _statusByRoad = statusByRoad;
+      _segments = [
+        for (final (roadName, link) in links)
+          RoadSegment(
+            roadName: roadName,
+            points: link.points,
+            color: traffic.linkSpeeds[link.linkId] == null
+                ? Colors.grey
+                : TrafficLevel.fromSpeedKmh(traffic.linkSpeeds[link.linkId]!).color,
+            congested: traffic.linkSpeeds[link.linkId] != null &&
+                TrafficLevel.fromSpeedKmh(traffic.linkSpeeds[link.linkId]!) ==
+                    TrafficLevel.congested,
+          ),
+      ];
+    });
+
+    return traffic;
   }
 
   void _refresh() {
     setState(() {
-      _trafficFuture = _trafficService.fetchRegionTrafficData(widget.region);
+      _trafficFuture = _load();
     });
-    _drawRoadOverlays();
   }
 
-  Future<void> _onMapReady(KakaoMapController controller) async {
-    _mapController = controller;
-    _shapeController = await _retryOnFailure(
-      () => controller.addShapeLayer('road_status_layer'),
-    );
-    _labelController = await _retryOnFailure(
-      () => controller.addLabelLayer('road_marker_layer'),
-    );
-    _myLocationLayer = await _retryOnFailure(
-      () => controller.addLabelLayer('my_location_layer'),
-    );
-    await _drawRoadOverlays();
-    await _startLocationTracking();
+  void _selectRoad(String roadName) {
+    setState(() {
+      _focusedRoadName = _focusedRoadName == roadName ? null : roadName;
+    });
+    // 새로 확대/전체보기로 전환할 때마다 기존 확대/이동 상태를 초기화합니다.
+    _transformController.value = Matrix4.identity();
   }
 
-  Future<KImage> _myLocationIcon() {
-    return _myLocationIconCache ??= KImage.fromWidget(
-      Container(
-        width: 32,
-        height: 32,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.blue,
-        ),
-        alignment: Alignment.center,
-        child: const Icon(Icons.navigation, color: Colors.white, size: 18),
-      ),
-      const Size(32, 32),
+  Future<void> _startLocationTracking() async {
+    final granted = await _locationService.ensurePermission();
+    if (!granted || !mounted) return;
+
+    _positionSubscription = _locationService.positionStream().listen(
+      (position) {
+        if (!mounted) return;
+        final current = LatLng(position.latitude, position.longitude);
+        setState(() {
+          _myLocation = widget.region.contains(current) ? current : null;
+          _myHeading = position.speed > 0.5 && !position.heading.isNaN
+              ? position.heading
+              : _myHeading;
+        });
+      },
+      onError: (_) {}, // 위치 조회 실패는 조용히 무시 (핵심 기능이 아님).
     );
   }
 
@@ -121,195 +139,69 @@ class _MapScreenState extends State<MapScreen> {
       return;
     }
 
-    late final Position position;
     try {
-      position = await Geolocator.getCurrentPosition();
+      final position = await Geolocator.getCurrentPosition();
+      final current = LatLng(position.latitude, position.longitude);
+      if (!mounted) return;
+
+      if (!widget.region.contains(current)) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('현재 위치가 이 권역 범위 밖에 있습니다.')));
+        return;
+      }
+
+      setState(() => _myLocation = current);
+      // 화면 확대 없이, 현재 위치가 표시된 것을 사용자가 바로 알아볼 수 있도록
+      // 변환(확대/이동) 상태를 기본값으로 되돌립니다.
+      _transformController.value = Matrix4.identity();
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(content: Text('현재 위치를 가져오지 못했습니다.')));
-      return;
     }
-
-    await _onPositionUpdate(position);
-
-    final mapController = _mapController;
-    if (mapController == null) return;
-    await mapController.moveCamera(
-      CameraUpdate.newCenterPosition(
-        LatLng(position.latitude, position.longitude),
-        zoomLevel: 16,
-      ),
-      animation: const CameraAnimation(300),
-    );
   }
 
-  Future<void> _startLocationTracking() async {
-    final granted = await _locationService.ensurePermission();
-    if (!granted || !mounted) return;
+  void _onDiagramTap(Offset localPosition, DiagramProjection projection, Size size) {
+    RoadSegment? closest;
+    double closestDistance = double.infinity;
 
-    _positionSubscription = _locationService.positionStream().listen(
-      _onPositionUpdate,
-      onError: (_) {}, // 위치 조회 실패는 조용히 무시 (핵심 기능이 아님).
-    );
-  }
-
-  Future<void> _onPositionUpdate(Position position) async {
-    final mapController = _mapController;
-    final myLocationLayer = _myLocationLayer;
-    if (mapController == null || myLocationLayer == null) return;
-
-    final current = LatLng(position.latitude, position.longitude);
-    final inRegion = widget.region.contains(current);
-
-    if (!inRegion) {
-      if (_isTracking) {
-        _isTracking = false;
-        await mapController.tracking.stop();
-        await _myLocationPoi?.hide();
+    for (final segment in _segments) {
+      for (var i = 0; i < segment.points.length - 1; i++) {
+        final a = projection.project(segment.points[i]);
+        final b = projection.project(segment.points[i + 1]);
+        final distance = _distanceToSegment(localPosition, a, b);
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closest = segment;
+        }
       }
-      return;
     }
 
-    if (_myLocationPoi == null) {
-      final icon = await _myLocationIcon();
-      _myLocationPoi = await myLocationLayer.addPoi(
-        current,
-        style: PoiStyle(icon: icon, anchor: const KPoint(0.5, 0.5)),
-        id: 'my_location',
-      );
-    } else {
-      await _myLocationPoi!.show();
-      await _myLocationPoi!.move(current, 500);
-    }
+    // 화면 크기 대비 일정 거리 이내일 때만 탭으로 인정합니다.
+    final threshold = math.min(size.width, size.height) * 0.03 + 10;
+    if (closest == null || closestDistance > threshold) return;
 
-    // 이동 중(속도가 유의미할 때)에만 방향을 갱신합니다. 정지 시 GPS heading은 노이즈가 큽니다.
-    if (position.speed > 0.5 && !position.heading.isNaN) {
-      await _myLocationPoi!.rotate(position.heading, 300);
-    }
-
-    if (!_isTracking) {
-      _isTracking = true;
-      mapController.tracking.poi = _myLocationPoi;
-      await mapController.tracking.start();
-      await mapController.tracking.setTrackingRotate(true);
-    }
-  }
-
-  Future<KImage> _markerIcon(Color color) {
-    return _markerIconCache.putIfAbsent(
-      color,
-      () => KImage.fromWidget(
-        Container(
-          width: 22,
-          height: 22,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color,
-            border: Border.all(color: Colors.white, width: 2),
-          ),
-        ),
-        const Size(22, 22),
-      ),
-    );
-  }
-
-  Future<void> _showRoadInfo(String roadName, RoadTrafficStatus? status) async {
-    if (!mounted) return;
+    final status = _statusByRoad[closest.roadName];
     final message = status == null
-        ? '$roadName - 현재 소통정보 없음'
-        : '$roadName - ${status.level.label} (${status.averageSpeedKmh.toStringAsFixed(0)}km/h)';
+        ? '${closest.roadName} - 현재 소통정보 없음'
+        : '${closest.roadName} - ${status.level.label} (${status.averageSpeedKmh.toStringAsFixed(0)}km/h)';
 
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _drawRoadOverlays() async {
-    final mapController = _mapController;
-    if (mapController == null) return;
+  double _distanceToSegment(Offset p, Offset a, Offset b) {
+    final ab = b - a;
+    final abLengthSquared = ab.dx * ab.dx + ab.dy * ab.dy;
+    if (abLengthSquared == 0) return (p - a).distance;
 
-    // 이전에 그린 선/마커가 남아있지 않도록 레이어를 새로 만듭니다.
-    if (_shapeController != null) {
-      await mapController.removeShapeLayer(_shapeController!);
-    }
-    if (_labelController != null) {
-      await mapController.removeLabelLayer(_labelController!);
-    }
-    final uniqueSuffix = DateTime.now().microsecondsSinceEpoch;
-    final shapeController = await _retryOnFailure(
-      () => mapController.addShapeLayer('road_status_layer_$uniqueSuffix'),
-    );
-    final labelController = await _retryOnFailure(
-      () => mapController.addLabelLayer('road_marker_layer_$uniqueSuffix'),
-    );
-    _shapeController = shapeController;
-    _labelController = labelController;
-
-    final links = await _geometryRepository.geometriesFor(widget.region.roadNames);
-    final traffic = await _trafficFuture;
-    final statusByRoad = {for (final s in traffic.roadStatuses) s.roadName: s};
-
-    // 도로명별로 가장 긴 구간을 찾아 마커 위치(중간 지점)로 사용합니다.
-    final longestLinkByRoad = <String, RoadLinkGeometryWithRoad>{};
-
-    for (final (roadName, link) in links) {
-      final speed = traffic.linkSpeeds[link.linkId];
-      final color = speed == null ? Colors.grey : TrafficLevel.fromSpeedKmh(speed).color;
-
-      await shapeController.addPolylineShape(
-        MapPoint(link.points),
-        PolylineStyle(color, 6),
-        PolylineCap.round,
-        id: '${roadName}_${link.linkId}',
-      );
-
-      final current = longestLinkByRoad[roadName];
-      if (current == null || link.points.length > current.link.points.length) {
-        longestLinkByRoad[roadName] = (roadName: roadName, link: link);
-      }
-    }
-
-    // 첫 진입 시에는 그려진 도로가 실제로 화면에 보이도록, 전체 도로 구간의 경계 상자에
-    // 카메라를 맞춥니다. (권역 중심 좌표만으로는 도로가 화면 밖에 있을 수 있음 - 예:
-    // 올림픽대로/강변북로는 한강변이라 서울시청 근처 기본 화면에는 안 보임)
-    if (!_hasFittedCameraToRoads && links.isNotEmpty) {
-      _hasFittedCameraToRoads = true;
-      double? minLat, maxLat, minLng, maxLng;
-      for (final (_, link) in links) {
-        for (final point in link.points) {
-          minLat = (minLat == null || point.latitude < minLat) ? point.latitude : minLat;
-          maxLat = (maxLat == null || point.latitude > maxLat) ? point.latitude : maxLat;
-          minLng = (minLng == null || point.longitude < minLng) ? point.longitude : minLng;
-          maxLng = (maxLng == null || point.longitude > maxLng) ? point.longitude : maxLng;
-        }
-      }
-      if (minLat != null) {
-        await mapController.moveCamera(
-          CameraUpdate.fitMapPoints(
-            [
-              LatLng(minLat, minLng!),
-              LatLng(maxLat!, maxLng!),
-            ],
-            padding: 80,
-          ),
-        );
-      }
-    }
-
-    for (final entry in longestLinkByRoad.values) {
-      final status = statusByRoad[entry.roadName];
-      final midpoint = entry.link.points[entry.link.points.length ~/ 2];
-      final icon = await _markerIcon(status?.level.color ?? Colors.grey);
-
-      await labelController.addPoi(
-        midpoint,
-        style: PoiStyle(icon: icon, anchor: const KPoint(0.5, 0.5)),
-        id: 'marker_${entry.roadName}',
-        onClick: () => _showRoadInfo(entry.roadName, status),
-      );
-    }
+    var t = ((p.dx - a.dx) * ab.dx + (p.dy - a.dy) * ab.dy) / abLengthSquared;
+    t = t.clamp(0.0, 1.0);
+    final projected = Offset(a.dx + ab.dx * t, a.dy + ab.dy * t);
+    return (p - projected).distance;
   }
 
   @override
@@ -330,14 +222,66 @@ class _MapScreenState extends State<MapScreen> {
           Expanded(
             child: Stack(
               children: [
-                KakaoMap(
-                  option: KakaoMapOption(
-                    position: widget.region.center,
-                    zoomLevel: 14,
-                    mapType: MapType.normal,
+                Positioned.fill(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final size = Size(constraints.maxWidth, constraints.maxHeight);
+                      final focused = _focusedRoadName;
+                      final boundsSegments = focused == null
+                          ? _segments
+                          : _segments.where((s) => s.roadName == focused);
+                      final allPoints = boundsSegments.expand((s) => s.points);
+                      final projection = DiagramProjection.fitBounds(
+                        points: allPoints.isEmpty ? [widget.region.center] : allPoints,
+                        width: size.width,
+                        height: size.height,
+                      );
+                      final paintSegments = focused == null
+                          ? _segments
+                          : [
+                              for (final s in _segments)
+                                RoadSegment(
+                                  roadName: s.roadName,
+                                  points: s.points,
+                                  color: s.roadName == focused
+                                      ? s.color
+                                      : s.color.withValues(alpha: 0.2),
+                                  congested: s.congested,
+                                ),
+                            ];
+
+                      return InteractiveViewer(
+                        transformationController: _transformController,
+                        minScale: 1,
+                        maxScale: 6,
+                        child: GestureDetector(
+                          onTapUp: (details) =>
+                              _onDiagramTap(details.localPosition, projection, size),
+                          child: CustomPaint(
+                            size: size,
+                            painter: RoadDiagramPainter(
+                              projection: projection,
+                              segments: paintSegments,
+                              myLocation: _myLocation,
+                              myHeading: _myHeading,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                  onMapReady: _onMapReady,
                 ),
+                if (_focusedRoadName != null)
+                  Positioned(
+                    left: 16,
+                    top: 16,
+                    child: ActionChip(
+                      avatar: const Icon(Icons.zoom_out_map, size: 18),
+                      label: Text('${_focusedRoadName!} · 전체보기'),
+                      backgroundColor: Theme.of(context).colorScheme.surface,
+                      onPressed: () => _selectRoad(_focusedRoadName!),
+                    ),
+                  ),
                 Positioned(
                   right: 16,
                   bottom: 16,
@@ -356,6 +300,8 @@ class _MapScreenState extends State<MapScreen> {
             child: _RoadStatusPanel(
               trafficFuture: _trafficFuture,
               onRetry: _refresh,
+              focusedRoadName: _focusedRoadName,
+              onSelectRoad: _selectRoad,
             ),
           ),
         ],
@@ -364,13 +310,18 @@ class _MapScreenState extends State<MapScreen> {
   }
 }
 
-typedef RoadLinkGeometryWithRoad = ({String roadName, RoadLinkGeometry link});
-
 class _RoadStatusPanel extends StatelessWidget {
   final Future<RegionTrafficData> trafficFuture;
   final VoidCallback onRetry;
+  final String? focusedRoadName;
+  final ValueChanged<String> onSelectRoad;
 
-  const _RoadStatusPanel({required this.trafficFuture, required this.onRetry});
+  const _RoadStatusPanel({
+    required this.trafficFuture,
+    required this.onRetry,
+    required this.focusedRoadName,
+    required this.onSelectRoad,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -419,7 +370,12 @@ class _RoadStatusPanel extends StatelessWidget {
             separatorBuilder: (context, index) => const Divider(height: 1),
             itemBuilder: (context, index) {
               final status = statuses[index];
+              final selected = status.roadName == focusedRoadName;
               return ListTile(
+                selected: selected,
+                selectedTileColor:
+                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                onTap: () => onSelectRoad(status.roadName),
                 leading: CircleAvatar(
                   backgroundColor: status.level.color,
                   radius: 8,

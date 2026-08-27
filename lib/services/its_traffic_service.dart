@@ -30,18 +30,25 @@ class ItsTrafficService {
     return key;
   }
 
-  /// [region]의 경계 상자 내 실시간 교통정보를 조회합니다.
+  /// [region]의 실시간 교통정보를 조회합니다.
   /// - roadStatuses: region.roadNames에 해당하는 도로의 평균 소통 상태
   /// - linkSpeeds: 조회된 모든 구간의 linkId -> 속도(km/h) (도로명 필터 없음)
-  Future<RegionTrafficData> fetchRegionTrafficData(Region region) async {
-    final bbox = region.boundingBox();
+  ///
+  /// [bbox]를 지정하지 않으면 권역 중심 좌표 기준 반경으로 조회합니다.
+  /// 화면에 그려지는 도로 구간이 그보다 넓게 퍼져 있으면(예: 올림픽대로 전체 구간)
+  /// 그 구간의 실제 경계 상자를 [bbox]로 넘겨서 누락 없이 조회하세요.
+  Future<RegionTrafficData> fetchRegionTrafficData(
+    Region region, {
+    ({double minX, double maxX, double minY, double maxY})? bbox,
+  }) async {
+    final effectiveBbox = bbox ?? region.boundingBox();
     final uri = Uri.parse(_baseUrl).replace(queryParameters: {
       'apiKey': _apiKey,
       'type': 'all',
-      'minX': bbox.minX.toStringAsFixed(6),
-      'maxX': bbox.maxX.toStringAsFixed(6),
-      'minY': bbox.minY.toStringAsFixed(6),
-      'maxY': bbox.maxY.toStringAsFixed(6),
+      'minX': effectiveBbox.minX.toStringAsFixed(6),
+      'maxX': effectiveBbox.maxX.toStringAsFixed(6),
+      'minY': effectiveBbox.minY.toStringAsFixed(6),
+      'maxY': effectiveBbox.maxY.toStringAsFixed(6),
       'getType': 'json',
     });
 

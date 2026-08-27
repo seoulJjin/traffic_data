@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:kakao_map_sdk/kakao_map_sdk.dart';
 
+import '../models/lat_lng.dart';
 import '../models/road_link_geometry.dart';
 
 /// assets/road_geometry.json(표준노드링크에서 추출한 대상 도로 좌표)을 로드/캐싱합니다.
