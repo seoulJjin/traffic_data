@@ -40,6 +40,7 @@ class _MapScreenState extends State<MapScreen> {
   Poi? _myLocationPoi;
   StreamSubscription<Position>? _positionSubscription;
   bool _isTracking = false;
+  bool _hasFittedCameraToRoads = false;
 
   @override
   void initState() {
@@ -53,6 +54,25 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
+  /// 카카오맵 SDK는 onMapReady 직후 잠깐 동안 레이어 생성(addShapeLayer 등)이
+  /// 네이티브 쪽 초기화 타이밍 문제로 실패(getLayer(...) must not be null)할 수 있어,
+  /// 짧은 간격으로 재시도합니다.
+  Future<T> _retryOnFailure<T>(
+    Future<T> Function() action, {
+    int retries = 6,
+    Duration delay = const Duration(milliseconds: 250),
+  }) async {
+    for (var attempt = 1; attempt <= retries; attempt++) {
+      try {
+        return await action();
+      } catch (e) {
+        if (attempt == retries) rethrow;
+        await Future.delayed(delay);
+      }
+    }
+    throw StateError('unreachable');
+  }
+
   void _refresh() {
     setState(() {
       _trafficFuture = _trafficService.fetchRegionTrafficData(widget.region);
@@ -62,9 +82,15 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _onMapReady(KakaoMapController controller) async {
     _mapController = controller;
-    _shapeController = await controller.addShapeLayer('road_status_layer');
-    _labelController = await controller.addLabelLayer('road_marker_layer');
-    _myLocationLayer = await controller.addLabelLayer('my_location_layer');
+    _shapeController = await _retryOnFailure(
+      () => controller.addShapeLayer('road_status_layer'),
+    );
+    _labelController = await _retryOnFailure(
+      () => controller.addLabelLayer('road_marker_layer'),
+    );
+    _myLocationLayer = await _retryOnFailure(
+      () => controller.addLabelLayer('my_location_layer'),
+    );
     await _drawRoadOverlays();
     await _startLocationTracking();
   }
@@ -212,10 +238,12 @@ class _MapScreenState extends State<MapScreen> {
       await mapController.removeLabelLayer(_labelController!);
     }
     final uniqueSuffix = DateTime.now().microsecondsSinceEpoch;
-    final shapeController =
-        await mapController.addShapeLayer('road_status_layer_$uniqueSuffix');
-    final labelController =
-        await mapController.addLabelLayer('road_marker_layer_$uniqueSuffix');
+    final shapeController = await _retryOnFailure(
+      () => mapController.addShapeLayer('road_status_layer_$uniqueSuffix'),
+    );
+    final labelController = await _retryOnFailure(
+      () => mapController.addLabelLayer('road_marker_layer_$uniqueSuffix'),
+    );
     _shapeController = shapeController;
     _labelController = labelController;
 
@@ -240,6 +268,33 @@ class _MapScreenState extends State<MapScreen> {
       final current = longestLinkByRoad[roadName];
       if (current == null || link.points.length > current.link.points.length) {
         longestLinkByRoad[roadName] = (roadName: roadName, link: link);
+      }
+    }
+
+    // 첫 진입 시에는 그려진 도로가 실제로 화면에 보이도록, 전체 도로 구간의 경계 상자에
+    // 카메라를 맞춥니다. (권역 중심 좌표만으로는 도로가 화면 밖에 있을 수 있음 - 예:
+    // 올림픽대로/강변북로는 한강변이라 서울시청 근처 기본 화면에는 안 보임)
+    if (!_hasFittedCameraToRoads && links.isNotEmpty) {
+      _hasFittedCameraToRoads = true;
+      double? minLat, maxLat, minLng, maxLng;
+      for (final (_, link) in links) {
+        for (final point in link.points) {
+          minLat = (minLat == null || point.latitude < minLat) ? point.latitude : minLat;
+          maxLat = (maxLat == null || point.latitude > maxLat) ? point.latitude : maxLat;
+          minLng = (minLng == null || point.longitude < minLng) ? point.longitude : minLng;
+          maxLng = (maxLng == null || point.longitude > maxLng) ? point.longitude : maxLng;
+        }
+      }
+      if (minLat != null) {
+        await mapController.moveCamera(
+          CameraUpdate.fitMapPoints(
+            [
+              LatLng(minLat, minLng!),
+              LatLng(maxLat!, maxLng!),
+            ],
+            padding: 80,
+          ),
+        );
       }
     }
 
