@@ -16,10 +16,15 @@ class RoadSignBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final signage = roadSignageByName[roadName];
-    if (signage != null && signage.type == RoadSignType.expresswayNumbered) {
-      return _ExpresswayShield(number: signage.routeNumber!, size: size);
+    switch (signage?.type) {
+      case RoadSignType.expresswayNumbered:
+        return _ExpresswayShield(number: signage!.routeNumber!, size: size);
+      case RoadSignType.regionalRoute:
+        return _RegionalRouteBadge(number: signage!.routeNumber!, size: size);
+      case RoadSignType.motorway:
+      case null:
+        return _MotorwayBadge(size: size);
     }
-    return _MotorwayBadge(size: size);
   }
 }
 
@@ -99,6 +104,37 @@ class _ShieldPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// 지방도 노선표지: 노란 바탕 + 파란 테두리 + 파란 번호 (실제 도로표지규칙 색상 규정).
+class _RegionalRouteBadge extends StatelessWidget {
+  final int number;
+  final double size;
+
+  const _RegionalRouteBadge({required this.number, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size * 0.86,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6C846),
+        borderRadius: BorderRadius.circular(size * 0.1),
+        border: Border.all(color: const Color(0xFF1B4F8C), width: size * 0.08),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '$number',
+        style: GoogleFonts.notoSansKr(
+          color: const Color(0xFF1B4F8C),
+          fontWeight: FontWeight.w800,
+          fontSize: size * 0.34,
+          height: 1,
+        ),
+      ),
+    );
+  }
 }
 
 /// 자동차전용도로 표지: 파란 사각 배경에 흰 차량 픽토그램.
