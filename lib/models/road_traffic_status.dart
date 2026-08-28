@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 /// 도로 하나의 현재 소통 상태(구간 평균).
 class RoadTrafficStatus {
   final String roadName;
@@ -17,9 +19,9 @@ class RoadTrafficStatus {
 
 /// 소통 상태 단계. 임계값은 일반적인 기준을 단순화한 근사치입니다.
 enum TrafficLevel {
-  smooth('원활', Colors.green),
-  slow('서행', Colors.orange),
-  congested('정체', Colors.red);
+  smooth('원활', AppColors.signalSmooth),
+  slow('서행', AppColors.signalSlow),
+  congested('정체', AppColors.signalCongested);
 
   final String label;
   final Color color;

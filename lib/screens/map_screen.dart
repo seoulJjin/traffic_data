@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
+import 'package:google_fonts/google_fonts.dart';
+
 import '../models/landmark.dart';
 import '../models/lat_lng.dart';
 import '../models/region.dart';
@@ -12,7 +14,9 @@ import '../services/its_traffic_service.dart';
 import '../services/landmark_repository.dart';
 import '../services/location_service.dart';
 import '../services/road_geometry_repository.dart';
+import '../theme/app_theme.dart';
 import '../widgets/road_diagram_painter.dart';
+import '../widgets/route_shield.dart';
 
 /// 지도에서 도로 선 또는 정체 경고 삼각형을 탭했을 때 하단에 보여줄 정보.
 class _SelectionInfo {
@@ -347,9 +351,16 @@ class _MapScreenState extends State<MapScreen> {
                     left: 16,
                     top: 16,
                     child: ActionChip(
-                      avatar: const Icon(Icons.zoom_out_map, size: 18),
-                      label: Text('${_focusedRoadName!} · 전체보기'),
-                      backgroundColor: Theme.of(context).colorScheme.surface,
+                      avatar: const Icon(Icons.zoom_out_map, size: 18, color: Colors.white),
+                      label: Text(
+                        '${_focusedRoadName!} · 전체보기',
+                        style: GoogleFonts.notoSansKr(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      backgroundColor: AppColors.highwayGreen,
+                      side: BorderSide.none,
                       onPressed: () => _selectRoad(_focusedRoadName!),
                     ),
                   ),
@@ -396,12 +407,10 @@ class _SelectionBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
-        border: Border(
-          bottom: BorderSide(color: Theme.of(context).dividerColor),
-        ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFFEFE9D8),
+        border: Border(bottom: BorderSide(color: AppColors.hairline)),
       ),
       child: Row(
         children: [
@@ -411,16 +420,26 @@ class _SelectionBanner extends StatelessWidget {
               children: [
                 Text(
                   selection.title,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  style: GoogleFonts.blackHanSans(
+                    fontSize: 17,
+                    color: AppColors.asphalt,
+                  ),
                 ),
-                const SizedBox(height: 2),
-                for (final line in selection.lines) Text(line),
+                const SizedBox(height: 4),
+                for (final line in selection.lines)
+                  Text(
+                    line,
+                    style: GoogleFonts.notoSansKr(
+                      fontSize: 13.5,
+                      color: AppColors.asphalt.withValues(alpha: 0.8),
+                    ),
+                  ),
               ],
             ),
           ),
           IconButton(
             onPressed: onClose,
-            icon: const Icon(Icons.close, size: 20),
+            icon: const Icon(Icons.close, size: 20, color: AppColors.asphalt),
             tooltip: '닫기',
           ),
         ],
@@ -492,28 +511,40 @@ class _RoadStatusPanel extends StatelessWidget {
               final selected = status.roadName == focusedRoadName;
               return ListTile(
                 selected: selected,
-                selectedTileColor:
-                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                selectedTileColor: AppColors.highwayGreen.withValues(alpha: 0.08),
                 onTap: () => onSelectRoad(status.roadName),
-                leading: CircleAvatar(
-                  backgroundColor: status.level.color,
-                  radius: 8,
-                  child: const SizedBox.shrink(),
+                leading: RouteShield(
+                  color: status.level.color,
+                  label: status.averageSpeedKmh.round().toString(),
                 ),
-                title: Text(status.roadName),
-                subtitle: Text('구간 ${status.linkCount}곳 평균'),
+                title: Text(
+                  status.roadName,
+                  style: GoogleFonts.notoSansKr(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  '구간 ${status.linkCount}곳 평균',
+                  style: GoogleFonts.notoSansKr(
+                    fontSize: 12.5,
+                    color: AppColors.asphalt.withValues(alpha: 0.6),
+                  ),
+                ),
                 trailing: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
                       status.level.label,
-                      style: TextStyle(
+                      style: GoogleFonts.notoSansKr(
                         color: status.level.color,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w800,
                       ),
                     ),
-                    Text('${status.averageSpeedKmh.toStringAsFixed(0)}km/h'),
+                    Text(
+                      '${status.averageSpeedKmh.toStringAsFixed(0)}km/h',
+                      style: GoogleFonts.notoSansKr(
+                        color: AppColors.asphalt.withValues(alpha: 0.75),
+                      ),
+                    ),
                   ],
                 ),
               );

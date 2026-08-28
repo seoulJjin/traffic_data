@@ -169,7 +169,7 @@ class RoadDiagramPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final backgroundPaint = Paint()..color = const Color(0xFFF3F1EA);
+    final backgroundPaint = Paint()..color = const Color(0xFFF5F2EA);
     canvas.drawRect(Offset.zero & size, backgroundPaint);
 
     for (final segment in segments) {
@@ -207,7 +207,9 @@ class RoadDiagramPainter extends CustomPainter {
 
   void _drawLandmark(Canvas canvas, Offset center, Landmark landmark) {
     final isJunction = landmark.type == LandmarkType.junction;
-    final dotColor = isJunction ? Colors.indigo.shade400 : Colors.brown.shade400;
+    final dotColor = isJunction
+        ? const Color(0xFF1B4F8C) // 국도 표지판 파랑 — 분기점/IC
+        : const Color(0xFF8A6B3E); // 다리 난간을 연상시키는 갈색 — 교량
 
     canvas.drawCircle(center, 3.5, Paint()..color = dotColor);
     canvas.drawCircle(
@@ -241,7 +243,7 @@ class RoadDiagramPainter extends CustomPainter {
       ..lineTo(center.dx - size * 0.9, center.dy + size * 0.7)
       ..lineTo(center.dx + size * 0.9, center.dy + size * 0.7)
       ..close();
-    canvas.drawPath(path, Paint()..color = Colors.red.shade700);
+    canvas.drawPath(path, Paint()..color = const Color(0xFFD64545));
     canvas.drawPath(
       path,
       Paint()
@@ -268,8 +270,8 @@ class RoadDiagramPainter extends CustomPainter {
   }
 
   void _drawMyLocation(Canvas canvas, Offset center, double? heading) {
-    canvas.drawCircle(center, 12, Paint()..color = Colors.blue.withValues(alpha: 0.25));
-    canvas.drawCircle(center, 8, Paint()..color = Colors.blue.shade700);
+    canvas.drawCircle(center, 12, Paint()..color = const Color(0xFF1B4F8C).withValues(alpha: 0.25));
+    canvas.drawCircle(center, 8, Paint()..color = const Color(0xFF1B4F8C));
     canvas.drawCircle(
       center,
       8,
@@ -288,7 +290,7 @@ class RoadDiagramPainter extends CustomPainter {
         ..lineTo(-5, -8)
         ..lineTo(5, -8)
         ..close();
-      canvas.drawPath(arrow, Paint()..color = Colors.blue.shade900);
+      canvas.drawPath(arrow, Paint()..color = const Color(0xFF0F3760));
       canvas.restore();
     }
   }
