@@ -12,6 +12,14 @@ import '../services/location_service.dart';
 import '../services/road_geometry_repository.dart';
 import '../widgets/road_diagram_painter.dart';
 
+/// 지도에서 도로 선 또는 정체 경고 삼각형을 탭했을 때 하단에 보여줄 정보.
+class _SelectionInfo {
+  final String title;
+  final List<String> lines;
+
+  const _SelectionInfo({required this.title, required this.lines});
+}
+
 /// 선택한 권역의 실시간 도로 소통 상태를, 실제 지도 대신
 /// 도로 모양만 강조한 심플한 다이어그램으로 보여주는 화면.
 /// (교통방송 상황판 스타일: 두꺼운 색상 선 + 정체 구간 경고 삼각형)
@@ -38,6 +46,7 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _myLocation;
   double? _myHeading;
   String? _focusedRoadName;
+  _SelectionInfo? _selection;
 
   @override
   void initState() {
@@ -89,6 +98,7 @@ class _MapScreenState extends State<MapScreen> {
             congested: traffic.linkSpeeds[link.linkId] != null &&
                 TrafficLevel.fromSpeedKmh(traffic.linkSpeeds[link.linkId]!) ==
                     TrafficLevel.congested,
+            speedKmh: traffic.linkSpeeds[link.linkId],
           ),
       ];
     });
@@ -163,7 +173,38 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _onDiagramTap(Offset localPosition, DiagramProjection projection, Size size) {
+  void _onDiagramTap(
+    Offset localPosition,
+    DiagramProjection projection,
+    Size size,
+    List<CongestionCluster> clusters,
+  ) {
+    // 경고 삼각형이 도로 선 위에 그려져 있으므로, 삼각형을 먼저 확인합니다.
+    final triangleRadius = math.min(size.width, size.height) * 0.03 + 14;
+    CongestionCluster? tappedCluster;
+    double closestClusterDistance = double.infinity;
+    for (final cluster in clusters) {
+      final distance = (cluster.position - localPosition).distance;
+      if (distance < triangleRadius && distance < closestClusterDistance) {
+        closestClusterDistance = distance;
+        tappedCluster = cluster;
+      }
+    }
+
+    if (tappedCluster != null) {
+      setState(() {
+        _selection = _SelectionInfo(
+          title: '정체 구간',
+          lines: [
+            for (final road in tappedCluster!.roads)
+              '${road.roadName} - ${TrafficLevel.fromSpeedKmh(road.speedKmh).label} '
+                  '(${road.speedKmh.toStringAsFixed(0)}km/h)',
+          ],
+        );
+      });
+      return;
+    }
+
     RoadSegment? closest;
     double closestDistance = double.infinity;
 
@@ -183,14 +224,19 @@ class _MapScreenState extends State<MapScreen> {
     final threshold = math.min(size.width, size.height) * 0.03 + 10;
     if (closest == null || closestDistance > threshold) return;
 
-    final status = _statusByRoad[closest.roadName];
-    final message = status == null
-        ? '${closest.roadName} - 현재 소통정보 없음'
-        : '${closest.roadName} - ${status.level.label} (${status.averageSpeedKmh.toStringAsFixed(0)}km/h)';
+    setState(() {
+      _selection = _SelectionInfo(
+        title: closest!.roadName,
+        lines: [_roadLine(closest.roadName)],
+      );
+    });
+  }
 
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+  String _roadLine(String roadName) {
+    final status = _statusByRoad[roadName];
+    return status == null
+        ? '$roadName - 현재 소통정보 없음'
+        : '$roadName - ${status.level.label} (${status.averageSpeedKmh.toStringAsFixed(0)}km/h)';
   }
 
   double _distanceToSegment(Offset p, Offset a, Offset b) {
@@ -247,21 +293,32 @@ class _MapScreenState extends State<MapScreen> {
                                       ? s.color
                                       : s.color.withValues(alpha: 0.2),
                                   congested: s.congested,
+                                  speedKmh: s.speedKmh,
                                 ),
                             ];
+                      final clusters = buildCongestionClusters(
+                        segments: paintSegments,
+                        projection: projection,
+                        size: size,
+                      );
 
                       return InteractiveViewer(
                         transformationController: _transformController,
                         minScale: 1,
                         maxScale: 6,
                         child: GestureDetector(
-                          onTapUp: (details) =>
-                              _onDiagramTap(details.localPosition, projection, size),
+                          onTapUp: (details) => _onDiagramTap(
+                            details.localPosition,
+                            projection,
+                            size,
+                            clusters,
+                          ),
                           child: CustomPaint(
                             size: size,
                             painter: RoadDiagramPainter(
                               projection: projection,
                               segments: paintSegments,
+                              congestionClusters: clusters,
                               myLocation: _myLocation,
                               myHeading: _myHeading,
                             ),
@@ -295,6 +352,10 @@ class _MapScreenState extends State<MapScreen> {
               ],
             ),
           ),
+          if (_selection != null) _SelectionBanner(
+            selection: _selection!,
+            onClose: () => setState(() => _selection = null),
+          ),
           SizedBox(
             height: 220,
             child: _RoadStatusPanel(
@@ -303,6 +364,50 @@ class _MapScreenState extends State<MapScreen> {
               focusedRoadName: _focusedRoadName,
               onSelectRoad: _selectRoad,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 도로 선/정체 경고 삼각형을 탭했을 때, 목록 위에 고정으로 보여주는 설명 배너.
+class _SelectionBanner extends StatelessWidget {
+  final _SelectionInfo selection;
+  final VoidCallback onClose;
+
+  const _SelectionBanner({required this.selection, required this.onClose});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
+        border: Border(
+          bottom: BorderSide(color: Theme.of(context).dividerColor),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  selection.title,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 2),
+                for (final line in selection.lines) Text(line),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: onClose,
+            icon: const Icon(Icons.close, size: 20),
+            tooltip: '닫기',
           ),
         ],
       ),

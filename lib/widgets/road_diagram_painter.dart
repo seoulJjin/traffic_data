@@ -84,23 +84,82 @@ class RoadSegment {
   final Color color;
   final bool congested;
 
+  /// 이 구간의 실시간 속도(km/h). 조회 범위 밖이라 데이터가 없으면 null.
+  final double? speedKmh;
+
   const RoadSegment({
     required this.roadName,
     required this.points,
     required this.color,
     this.congested = false,
+    this.speedKmh,
   });
+}
+
+/// 클러스터에 포함된 도로 하나의 정체 정보.
+class CongestedRoad {
+  final String roadName;
+  final double speedKmh;
+
+  const CongestedRoad({required this.roadName, required this.speedKmh});
+}
+
+/// 화면에 가깝게 모여있는 정체 구간을 하나로 묶은 클러스터.
+/// 경고 삼각형 하나가 이 클러스터 하나에 대응합니다.
+class CongestionCluster {
+  final Offset position;
+  final List<CongestedRoad> roads;
+
+  const CongestionCluster({required this.position, required this.roads});
+}
+
+/// [segments] 중 정체(congested) 구간들을, 서로 [clusterRadius] 이내에 있으면
+/// 하나의 [CongestionCluster]로 묶어서 반환합니다. 지도가 지저분해지지 않도록
+/// 경고 삼각형을 그리기 전에 항상 이 함수로 먼저 묶습니다.
+/// (그리기와 탭 판정이 같은 클러스터 목록을 써야 위치가 어긋나지 않습니다.)
+List<CongestionCluster> buildCongestionClusters({
+  required List<RoadSegment> segments,
+  required DiagramProjection projection,
+  required Size size,
+}) {
+  final points = <(Offset, CongestedRoad)>[
+    for (final segment in segments)
+      if (segment.congested && segment.points.isNotEmpty && segment.speedKmh != null)
+        (
+          projection.project(segment.points[segment.points.length ~/ 2]),
+          CongestedRoad(roadName: segment.roadName, speedKmh: segment.speedKmh!),
+        ),
+  ];
+
+  final clusterRadius = math.min(size.width, size.height) * 0.035 + 12;
+  final clusters = <CongestionCluster>[];
+
+  for (final (point, road) in points) {
+    final index = clusters.indexWhere((c) => (c.position - point).distance < clusterRadius);
+    if (index == -1) {
+      clusters.add(CongestionCluster(position: point, roads: [road]));
+    } else if (!clusters[index].roads.any((r) => r.roadName == road.roadName)) {
+      clusters[index] = CongestionCluster(
+        position: clusters[index].position,
+        roads: [...clusters[index].roads, road],
+      );
+    }
+  }
+
+  return clusters;
 }
 
 class RoadDiagramPainter extends CustomPainter {
   final DiagramProjection projection;
   final List<RoadSegment> segments;
+  final List<CongestionCluster> congestionClusters;
   final LatLng? myLocation;
   final double? myHeading;
 
   RoadDiagramPainter({
     required this.projection,
     required this.segments,
+    required this.congestionClusters,
     this.myLocation,
     this.myHeading,
   });
@@ -129,21 +188,8 @@ class RoadDiagramPainter extends CustomPainter {
       canvas.drawPath(path, paint);
     }
 
-    // 가까운 정체 구간끼리는 삼각형 하나로 묶어서(클러스터링) 화면이 지저분해지지 않게 합니다.
-    final congestedPoints = <Offset>[
-      for (final segment in segments)
-        if (segment.congested && segment.points.isNotEmpty)
-          projection.project(segment.points[segment.points.length ~/ 2]),
-    ];
-    final clusterRadius = math.min(size.width, size.height) * 0.035 + 12;
-    final clusters = <Offset>[];
-    for (final point in congestedPoints) {
-      final hasNearbyCluster =
-          clusters.any((c) => (c - point).distance < clusterRadius);
-      if (!hasNearbyCluster) clusters.add(point);
-    }
-    for (final cluster in clusters) {
-      _drawWarningTriangle(canvas, cluster);
+    for (final cluster in congestionClusters) {
+      _drawWarningTriangle(canvas, cluster.position);
     }
 
     final location = myLocation;
@@ -214,6 +260,7 @@ class RoadDiagramPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant RoadDiagramPainter oldDelegate) {
     return oldDelegate.segments != segments ||
+        oldDelegate.congestionClusters != congestionClusters ||
         oldDelegate.myLocation != myLocation ||
         oldDelegate.myHeading != myHeading;
   }
