@@ -31,7 +31,8 @@ class RoadSignBadge extends StatelessWidget {
   }
 }
 
-/// 고속국도 노선표지: 흰 테두리 방패 + 상단 빨간 띠 + 파란 바탕 + 흰 번호.
+/// 고속국도/서울특별시도 노선표지: 원형 배지, 상단 빨간 띠 + 파란 바탕 + 흰
+/// 테두리 + 흰 번호. (실제 내비게이션 앱들이 쓰는 원형 노선표지 모양을 따름.)
 class _ExpresswayShield extends StatelessWidget {
   final int number;
   final double size;
@@ -41,25 +42,22 @@ class _ExpresswayShield extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: size * 0.86,
+      width: size,
       height: size,
       child: Stack(
         alignment: Alignment.center,
         children: [
           CustomPaint(
-            size: Size(size * 0.86, size),
+            size: Size(size, size),
             painter: _ShieldPainter(),
           ),
-          Padding(
-            padding: EdgeInsets.only(top: size * 0.14),
-            child: Text(
-              '$number',
-              style: GoogleFonts.notoSansKr(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: size * 0.32,
-                height: 1,
-              ),
+          Text(
+            '$number',
+            style: GoogleFonts.notoSansKr(
+              color: Colors.white,
+              fontWeight: FontWeight.w800,
+              fontSize: size * 0.34,
+              height: 1,
             ),
           ),
         ],
@@ -71,37 +69,28 @@ class _ExpresswayShield extends StatelessWidget {
 class _ShieldPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final path = Path()
-      ..moveTo(0, 0.16 * h)
-      ..lineTo(0, 0.58 * h)
-      ..quadraticBezierTo(0, 0.82 * h, 0.22 * w, 0.94 * h)
-      ..lineTo(0.5 * w, h)
-      ..lineTo(0.78 * w, 0.94 * h)
-      ..quadraticBezierTo(w, 0.82 * h, w, 0.58 * h)
-      ..lineTo(w, 0.16 * h)
-      ..quadraticBezierTo(w, 0, 0.86 * w, 0)
-      ..lineTo(0.14 * w, 0)
-      ..quadraticBezierTo(0, 0, 0, 0.16 * h)
-      ..close();
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    final strokeWidth = size.width * 0.07;
 
-    canvas.drawPath(path, Paint()..color = const Color(0xFF1B4F8C));
+    canvas.drawCircle(center, radius - strokeWidth / 2, Paint()..color = const Color(0xFF1B4F8C));
 
+    // 위쪽 빨간 띠 (원 안쪽으로만 잘라서 그립니다).
     canvas.save();
-    canvas.clipPath(path);
+    canvas.clipPath(Path()..addOval(Rect.fromCircle(center: center, radius: radius - strokeWidth / 2)));
     canvas.drawRect(
-      Rect.fromLTWH(0, 0, w, h * 0.26),
+      Rect.fromLTWH(0, 0, size.width, size.height * 0.28),
       Paint()..color = const Color(0xFFC23B3B),
     );
     canvas.restore();
 
-    canvas.drawPath(
-      path,
+    canvas.drawCircle(
+      center,
+      radius - strokeWidth / 2,
       Paint()
         ..color = Colors.white
         ..style = PaintingStyle.stroke
-        ..strokeWidth = w * 0.07,
+        ..strokeWidth = strokeWidth,
     );
   }
 
