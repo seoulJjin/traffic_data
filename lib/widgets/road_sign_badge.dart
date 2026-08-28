@@ -18,6 +18,9 @@ class RoadSignBadge extends StatelessWidget {
     final signage = roadSignageByName[roadName];
     switch (signage?.type) {
       case RoadSignType.expresswayNumbered:
+      case RoadSignType.cityRoute:
+        // 내비게이션 앱들이 서울특별시도 번호도 고속도로와 같은 방패 마크로
+        // 표시하므로 동일한 디자인을 사용합니다.
         return _ExpresswayShield(number: signage!.routeNumber!, size: size);
       case RoadSignType.regionalRoute:
         return _RegionalRouteBadge(number: signage!.routeNumber!, size: size);
