@@ -4,10 +4,12 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../models/landmark.dart';
 import '../models/lat_lng.dart';
 import '../models/region.dart';
 import '../models/road_traffic_status.dart';
 import '../services/its_traffic_service.dart';
+import '../services/landmark_repository.dart';
 import '../services/location_service.dart';
 import '../services/road_geometry_repository.dart';
 import '../widgets/road_diagram_painter.dart';
@@ -35,11 +37,13 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   final _trafficService = ItsTrafficService();
   final _geometryRepository = RoadGeometryRepository();
+  final _landmarkRepository = LandmarkRepository();
   final _locationService = LocationService();
   final _transformController = TransformationController();
 
   late Future<RegionTrafficData> _trafficFuture;
   List<RoadSegment> _segments = [];
+  List<Landmark> _landmarks = [];
   Map<String, RoadTrafficStatus> _statusByRoad = {};
 
   StreamSubscription<Position>? _positionSubscription;
@@ -52,7 +56,14 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     _trafficFuture = _load();
+    _loadLandmarks();
     _startLocationTracking();
+  }
+
+  Future<void> _loadLandmarks() async {
+    final landmarks = await _landmarkRepository.load();
+    if (!mounted) return;
+    setState(() => _landmarks = landmarks);
   }
 
   @override
@@ -282,25 +293,27 @@ class _MapScreenState extends State<MapScreen> {
                         width: size.width,
                         height: size.height,
                       );
+                      // 도로를 선택해 확대했을 때는 다른 도로의 소통 정보가 섞여 보이지
+                      // 않도록 선택한 도로만 그립니다.
                       final paintSegments = focused == null
                           ? _segments
-                          : [
-                              for (final s in _segments)
-                                RoadSegment(
-                                  roadName: s.roadName,
-                                  points: s.points,
-                                  color: s.roadName == focused
-                                      ? s.color
-                                      : s.color.withValues(alpha: 0.2),
-                                  congested: s.congested,
-                                  speedKmh: s.speedKmh,
-                                ),
-                            ];
+                          : _segments.where((s) => s.roadName == focused).toList();
                       final clusters = buildCongestionClusters(
                         segments: paintSegments,
                         projection: projection,
                         size: size,
                       );
+                      // 분기점/교량 이름은 도로를 하나 선택해 확대했을 때만 보여줍니다.
+                      // 전체보기 상태에서 다 표시하면 글자가 너무 빽빽해집니다.
+                      final visibleLandmarks = focused == null
+                          ? const <Landmark>[]
+                          : _landmarks
+                              .where((l) =>
+                                  l.position.latitude >= projection.minLat &&
+                                  l.position.latitude <= projection.maxLat &&
+                                  l.position.longitude >= projection.minLng &&
+                                  l.position.longitude <= projection.maxLng)
+                              .toList();
 
                       return InteractiveViewer(
                         transformationController: _transformController,
@@ -319,6 +332,7 @@ class _MapScreenState extends State<MapScreen> {
                               projection: projection,
                               segments: paintSegments,
                               congestionClusters: clusters,
+                              landmarks: visibleLandmarks,
                               myLocation: _myLocation,
                               myHeading: _myHeading,
                             ),

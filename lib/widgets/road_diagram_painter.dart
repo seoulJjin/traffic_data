@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../models/landmark.dart';
 import '../models/lat_lng.dart';
 
 /// 위/경도 좌표를 다이어그램 내부 평면 좌표로 변환하는 간단한 투영기.
@@ -153,6 +154,7 @@ class RoadDiagramPainter extends CustomPainter {
   final DiagramProjection projection;
   final List<RoadSegment> segments;
   final List<CongestionCluster> congestionClusters;
+  final List<Landmark> landmarks;
   final LatLng? myLocation;
   final double? myHeading;
 
@@ -160,6 +162,7 @@ class RoadDiagramPainter extends CustomPainter {
     required this.projection,
     required this.segments,
     required this.congestionClusters,
+    this.landmarks = const [],
     this.myLocation,
     this.myHeading,
   });
@@ -188,6 +191,10 @@ class RoadDiagramPainter extends CustomPainter {
       canvas.drawPath(path, paint);
     }
 
+    for (final landmark in landmarks) {
+      _drawLandmark(canvas, projection.project(landmark.position), landmark);
+    }
+
     for (final cluster in congestionClusters) {
       _drawWarningTriangle(canvas, cluster.position);
     }
@@ -196,6 +203,35 @@ class RoadDiagramPainter extends CustomPainter {
     if (location != null) {
       _drawMyLocation(canvas, projection.project(location), myHeading);
     }
+  }
+
+  void _drawLandmark(Canvas canvas, Offset center, Landmark landmark) {
+    final isJunction = landmark.type == LandmarkType.junction;
+    final dotColor = isJunction ? Colors.indigo.shade400 : Colors.brown.shade400;
+
+    canvas.drawCircle(center, 3.5, Paint()..color = dotColor);
+    canvas.drawCircle(
+      center,
+      3.5,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: landmark.name,
+        style: TextStyle(
+          color: dotColor,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          backgroundColor: const Color(0xCCF3F1EA),
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(canvas, Offset(center.dx + 5, center.dy - textPainter.height / 2));
   }
 
   void _drawWarningTriangle(Canvas canvas, Offset center) {
@@ -261,6 +297,7 @@ class RoadDiagramPainter extends CustomPainter {
   bool shouldRepaint(covariant RoadDiagramPainter oldDelegate) {
     return oldDelegate.segments != segments ||
         oldDelegate.congestionClusters != congestionClusters ||
+        oldDelegate.landmarks != landmarks ||
         oldDelegate.myLocation != myLocation ||
         oldDelegate.myHeading != myHeading;
   }
