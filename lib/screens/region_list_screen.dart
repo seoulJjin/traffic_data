@@ -88,17 +88,30 @@ class _RegionCard extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        region.name,
-                        style: GoogleFonts.blackHanSans(
-                          color: Colors.white,
-                          fontSize: 25,
-                          letterSpacing: 0.5,
-                          height: 1,
-                        ),
+                    Text(
+                      region.name,
+                      style: GoogleFonts.blackHanSans(
+                        color: Colors.white,
+                        fontSize: 25,
+                        letterSpacing: 0.5,
+                        height: 1,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: region.symbolLabel,
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(region.symbolEmoji, style: const TextStyle(fontSize: 15)),
+                      ),
+                    ),
+                    const Spacer(),
                     const Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 26),
                   ],
                 ),

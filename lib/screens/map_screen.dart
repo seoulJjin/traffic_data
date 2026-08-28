@@ -16,7 +16,7 @@ import '../services/location_service.dart';
 import '../services/road_geometry_repository.dart';
 import '../theme/app_theme.dart';
 import '../widgets/road_diagram_painter.dart';
-import '../widgets/route_shield.dart';
+import '../widgets/road_sign_badge.dart';
 
 /// 지도에서 도로 선 또는 정체 경고 삼각형을 탭했을 때 하단에 보여줄 정보.
 class _SelectionInfo {
@@ -513,10 +513,7 @@ class _RoadStatusPanel extends StatelessWidget {
                 selected: selected,
                 selectedTileColor: AppColors.highwayGreen.withValues(alpha: 0.08),
                 onTap: () => onSelectRoad(status.roadName),
-                leading: RouteShield(
-                  color: status.level.color,
-                  label: status.averageSpeedKmh.round().toString(),
-                ),
+                leading: RoadSignBadge(roadName: status.roadName),
                 title: Text(
                   status.roadName,
                   style: GoogleFonts.notoSansKr(fontWeight: FontWeight.w700),
