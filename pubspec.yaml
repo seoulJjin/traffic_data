@@ -66,6 +66,7 @@ flutter:
     - assets/road_geometry.json
     - assets/landmarks.json
     - assets/seoul_districts.json
+    - assets/gyeonggi_districts.json
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -78,9 +78,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _loadDistricts() async {
-    // 자치구 경계 데이터는 서울만 있어서, 다른 권역에서는 불러오지 않습니다.
-    if (widget.region.name != '서울') return;
-    final districts = await _districtRepository.load();
+    final districts = await _districtRepository.loadForRegion(widget.region.name);
     if (!mounted) return;
     setState(() => _districts = districts);
   }
