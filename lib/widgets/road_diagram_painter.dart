@@ -188,12 +188,13 @@ class RoadDiagramPainter extends CustomPainter {
         path.lineTo(offset.dx, offset.dy);
       }
       path.close();
+      final bold = district.emphasis == DistrictEmphasis.bold;
       canvas.drawPath(
         path,
         Paint()
-          ..color = const Color(0xFFCFC8B0)
+          ..color = bold ? const Color(0xFFA79A72) : const Color(0xFFCFC8B0)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 1,
+          ..strokeWidth = bold ? 2.4 : 1,
       );
     }
 

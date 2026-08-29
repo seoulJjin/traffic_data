@@ -52,7 +52,8 @@ class _MapScreenState extends State<MapScreen> {
   late Future<RegionTrafficData> _trafficFuture;
   List<RoadSegment> _segments = [];
   List<Landmark> _landmarks = [];
-  List<District> _districts = [];
+  List<District> _baseDistricts = []; // 해당 지역 안의 자치구 + 굵은 시 외곽선
+  List<District> _contextDistricts = []; // 도로가 지나가는 주변 시/군/구 (가는 선)
   List<LatLng> _riverPolygon = [];
   Map<String, RoadTrafficStatus> _statusByRoad = {};
 
@@ -78,9 +79,29 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _loadDistricts() async {
-    final districts = await _districtRepository.loadForRegion(widget.region.name);
+    final own = await _districtRepository.loadForRegion(widget.region.name);
+    final outline = await _districtRepository.loadCityOutline(widget.region.name);
     if (!mounted) return;
-    setState(() => _districts = districts);
+    setState(() => _baseDistricts = [...own, ...outline]);
+  }
+
+  /// 도로가 그려지는 범위(약간 여유를 둠)와 겹치는 주변 시/군/구 경계를 불러와,
+  /// 도로가 해당 지역 밖으로 뻗어나가는 구간도 어디를 지나는지 알아볼 수 있게 합니다.
+  Future<void> _loadContextDistricts({
+    required double minLat,
+    required double maxLat,
+    required double minLng,
+    required double maxLng,
+  }) async {
+    const pad = 0.05; // 위/경도 약 5km 여유
+    final context = await _districtRepository.loadContext(
+      minLat: minLat - pad,
+      maxLat: maxLat + pad,
+      minLng: minLng - pad,
+      maxLng: maxLng + pad,
+    );
+    if (!mounted) return;
+    setState(() => _contextDistricts = context);
   }
 
   /// 강변북로(북단)/올림픽대로(남단) 도로 좌표 사이 영역을 한강 모양으로
@@ -161,6 +182,10 @@ class _MapScreenState extends State<MapScreen> {
     final bbox = minLat == null
         ? null
         : (minX: minLng!, maxX: maxLng!, minY: minLat, maxY: maxLat!);
+
+    if (minLat != null) {
+      _loadContextDistricts(minLat: minLat, maxLat: maxLat!, minLng: minLng!, maxLng: maxLng!);
+    }
 
     final traffic =
         await _trafficService.fetchRegionTrafficData(widget.region, bbox: bbox);
@@ -405,7 +430,7 @@ class _MapScreenState extends State<MapScreen> {
                               segments: paintSegments,
                               congestionClusters: clusters,
                               landmarks: visibleLandmarks,
-                              districts: _districts,
+                              districts: [..._contextDistricts, ..._baseDistricts],
                               riverPolygon: _riverPolygon,
                               myLocation: _myLocation,
                               myHeading: _myHeading,
