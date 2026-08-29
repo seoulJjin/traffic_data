@@ -31,8 +31,8 @@ class RoadSignBadge extends StatelessWidget {
   }
 }
 
-/// 고속국도/서울특별시도 노선표지: 원형 배지, 상단 빨간 띠 + 파란 바탕 + 흰
-/// 테두리 + 흰 번호. (실제 내비게이션 앱들이 쓰는 원형 노선표지 모양을 따름.)
+/// 고속국도/서울특별시도 노선표지: 흰 바탕 + 파란 테두리(둥근 사각형) + 위쪽
+/// 빨간 캡 + 파란 번호. (실제 노선표지판/내비게이션 앱 아이콘과 동일한 모양.)
 class _ExpresswayShield extends StatelessWidget {
   final int number;
   final double size;
@@ -41,61 +41,50 @@ class _ExpresswayShield extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
+    const blue = Color(0xFF1B4F8C);
+    const red = Color(0xFFC23B3B);
+    final borderWidth = size * 0.09;
+
+    return Container(
       width: size,
       height: size,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(size * 0.24),
+        border: Border.all(color: blue, width: borderWidth),
+      ),
       child: Stack(
+        clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          CustomPaint(
-            size: Size(size, size),
-            painter: _ShieldPainter(),
+          Positioned(
+            top: -borderWidth * 0.6,
+            left: size * 0.2,
+            right: size * 0.2,
+            child: Container(
+              height: size * 0.18,
+              decoration: BoxDecoration(
+                color: red,
+                borderRadius: BorderRadius.circular(size * 0.1),
+              ),
+            ),
           ),
-          Text(
-            '$number',
-            style: GoogleFonts.notoSansKr(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-              fontSize: size * 0.34,
-              height: 1,
+          Padding(
+            padding: EdgeInsets.only(top: size * 0.08),
+            child: Text(
+              '$number',
+              style: GoogleFonts.notoSansKr(
+                color: blue,
+                fontWeight: FontWeight.w800,
+                fontSize: size * 0.36,
+                height: 1,
+              ),
             ),
           ),
         ],
       ),
     );
   }
-}
-
-class _ShieldPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    final strokeWidth = size.width * 0.07;
-
-    canvas.drawCircle(center, radius - strokeWidth / 2, Paint()..color = const Color(0xFF1B4F8C));
-
-    // 위쪽 빨간 띠 (원 안쪽으로만 잘라서 그립니다).
-    canvas.save();
-    canvas.clipPath(Path()..addOval(Rect.fromCircle(center: center, radius: radius - strokeWidth / 2)));
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, size.height * 0.28),
-      Paint()..color = const Color(0xFFC23B3B),
-    );
-    canvas.restore();
-
-    canvas.drawCircle(
-      center,
-      radius - strokeWidth / 2,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// 지방도 노선표지: 노란 바탕 + 파란 테두리 + 파란 번호 (실제 도로표지규칙 색상 규정).
