@@ -31,8 +31,9 @@ class RoadSignBadge extends StatelessWidget {
   }
 }
 
-/// 고속국도/서울특별시도 노선표지: 가로로 긴 타원, 바깥은 얇은 빨강 테두리,
-/// 안쪽은 두꺼운 파랑 테두리, 흰 바탕 + 진한 번호. (실제 참고 이미지와 동일한 모양.)
+/// 고속국도/서울특별시도 노선표지: 모서리를 비스듬히 자른 팔각형 배지.
+/// 흰 바탕 + 얇은 파랑 테두리 + 위쪽 빨강 사다리꼴 띠 + 파랑 굵은 번호.
+/// (실제 참고 이미지와 동일한 팔각형 노선표지 모양.)
 class _ExpresswayShield extends StatelessWidget {
   final int number;
   final double size;
@@ -42,41 +43,77 @@ class _ExpresswayShield extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final width = size * 1.3;
-    final height = size * 0.86;
+    final height = size * 0.98;
 
-    return Container(
+    return SizedBox(
       width: width,
       height: height,
-      padding: EdgeInsets.all(height * 0.05),
-      decoration: BoxDecoration(
-        color: const Color(0xFFC23B3B), // 바깥 빨강 테두리
-        borderRadius: BorderRadius.circular(height),
-      ),
-      child: Container(
-        padding: EdgeInsets.all(height * 0.11),
-        decoration: BoxDecoration(
-          color: const Color(0xFF1B4F8C), // 안쪽 파랑 테두리
-          borderRadius: BorderRadius.circular(height),
-        ),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(height),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            '$number',
-            style: GoogleFonts.notoSansKr(
-              color: const Color(0xFF1A1A1A),
-              fontWeight: FontWeight.w800,
-              fontSize: height * 0.42,
-              height: 1,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CustomPaint(size: Size(width, height), painter: _OctagonSignPainter()),
+          Padding(
+            padding: EdgeInsets.only(top: height * 0.2),
+            child: Text(
+              '$number',
+              style: GoogleFonts.notoSansKr(
+                color: const Color(0xFF1B4F8C),
+                fontWeight: FontWeight.w900,
+                fontSize: height * 0.46,
+                height: 1,
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
+}
+
+class _OctagonSignPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final cutX = w * 0.16;
+    final cutY = h * 0.24;
+
+    final octagon = Path()
+      ..moveTo(cutX, 0)
+      ..lineTo(w - cutX, 0)
+      ..lineTo(w, cutY)
+      ..lineTo(w, h - cutY)
+      ..lineTo(w - cutX, h)
+      ..lineTo(cutX, h)
+      ..lineTo(0, h - cutY)
+      ..lineTo(0, cutY)
+      ..close();
+
+    canvas.drawPath(octagon, Paint()..color = Colors.white);
+
+    // 위쪽 빨강 사다리꼴 띠 (팔각형 안쪽으로만 잘라서 그립니다).
+    canvas.save();
+    canvas.clipPath(octagon);
+    final redBand = Path()
+      ..moveTo(cutX, 0)
+      ..lineTo(w - cutX, 0)
+      ..lineTo(w - cutX * 0.35, h * 0.22)
+      ..lineTo(cutX * 0.35, h * 0.22)
+      ..close();
+    canvas.drawPath(redBand, Paint()..color = const Color(0xFFE0242C));
+    canvas.restore();
+
+    canvas.drawPath(
+      octagon,
+      Paint()
+        ..color = const Color(0xFF1B4F8C)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = w * 0.028,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// 지방도 노선표지: 노란 바탕 + 파란 테두리 + 파란 번호 (실제 도로표지규칙 색상 규정).
