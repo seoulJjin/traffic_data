@@ -31,8 +31,8 @@ class RoadSignBadge extends StatelessWidget {
   }
 }
 
-/// 고속국도/서울특별시도 노선표지: 흰 바탕 + 파란 테두리(둥근 사각형) + 위쪽
-/// 빨간 캡 + 파란 번호. (실제 노선표지판/내비게이션 앱 아이콘과 동일한 모양.)
+/// 고속국도/서울특별시도 노선표지: 가로로 긴 타원, 바깥은 얇은 빨강 테두리,
+/// 안쪽은 두꺼운 파랑 테두리, 흰 바탕 + 진한 번호. (실제 참고 이미지와 동일한 모양.)
 class _ExpresswayShield extends StatelessWidget {
   final int number;
   final double size;
@@ -41,47 +41,39 @@ class _ExpresswayShield extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const blue = Color(0xFF1B4F8C);
-    const red = Color(0xFFC23B3B);
-    final borderWidth = size * 0.09;
+    final width = size * 1.3;
+    final height = size * 0.86;
 
     return Container(
-      width: size,
-      height: size,
+      width: width,
+      height: height,
+      padding: EdgeInsets.all(height * 0.05),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(size * 0.24),
-        border: Border.all(color: blue, width: borderWidth),
+        color: const Color(0xFFC23B3B), // 바깥 빨강 테두리
+        borderRadius: BorderRadius.circular(height),
       ),
-      child: Stack(
-        clipBehavior: Clip.none,
-        alignment: Alignment.center,
-        children: [
-          Positioned(
-            top: -borderWidth * 0.6,
-            left: size * 0.2,
-            right: size * 0.2,
-            child: Container(
-              height: size * 0.18,
-              decoration: BoxDecoration(
-                color: red,
-                borderRadius: BorderRadius.circular(size * 0.1),
-              ),
+      child: Container(
+        padding: EdgeInsets.all(height * 0.11),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1B4F8C), // 안쪽 파랑 테두리
+          borderRadius: BorderRadius.circular(height),
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(height),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            '$number',
+            style: GoogleFonts.notoSansKr(
+              color: const Color(0xFF1A1A1A),
+              fontWeight: FontWeight.w800,
+              fontSize: height * 0.42,
+              height: 1,
             ),
           ),
-          Padding(
-            padding: EdgeInsets.only(top: size * 0.08),
-            child: Text(
-              '$number',
-              style: GoogleFonts.notoSansKr(
-                color: blue,
-                fontWeight: FontWeight.w800,
-                fontSize: size * 0.36,
-                height: 1,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
