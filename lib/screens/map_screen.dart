@@ -6,10 +6,13 @@ import 'package:geolocator/geolocator.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/district.dart';
 import '../models/landmark.dart';
 import '../models/lat_lng.dart';
 import '../models/region.dart';
+import '../models/road_link_geometry.dart';
 import '../models/road_traffic_status.dart';
+import '../services/district_repository.dart';
 import '../services/its_traffic_service.dart';
 import '../services/landmark_repository.dart';
 import '../services/location_service.dart';
@@ -42,12 +45,15 @@ class _MapScreenState extends State<MapScreen> {
   final _trafficService = ItsTrafficService();
   final _geometryRepository = RoadGeometryRepository();
   final _landmarkRepository = LandmarkRepository();
+  final _districtRepository = DistrictRepository();
   final _locationService = LocationService();
   final _transformController = TransformationController();
 
   late Future<RegionTrafficData> _trafficFuture;
   List<RoadSegment> _segments = [];
   List<Landmark> _landmarks = [];
+  List<District> _districts = [];
+  List<LatLng> _riverPolygon = [];
   Map<String, RoadTrafficStatus> _statusByRoad = {};
 
   StreamSubscription<Position>? _positionSubscription;
@@ -61,6 +67,7 @@ class _MapScreenState extends State<MapScreen> {
     super.initState();
     _trafficFuture = _load();
     _loadLandmarks();
+    _loadDistricts();
     _startLocationTracking();
   }
 
@@ -68,6 +75,68 @@ class _MapScreenState extends State<MapScreen> {
     final landmarks = await _landmarkRepository.load();
     if (!mounted) return;
     setState(() => _landmarks = landmarks);
+  }
+
+  Future<void> _loadDistricts() async {
+    // 자치구 경계 데이터는 서울만 있어서, 다른 권역에서는 불러오지 않습니다.
+    if (widget.region.name != '서울') return;
+    final districts = await _districtRepository.load();
+    if (!mounted) return;
+    setState(() => _districts = districts);
+  }
+
+  /// 강변북로(북단)/올림픽대로(남단) 도로 좌표 사이 영역을 한강 모양으로
+  /// 아주 간략하게 근사합니다. 두 도로가 모두 있을 때(서울 권역)만 값이 나옵니다.
+  ///
+  /// 원본 링크는 조각조각 나뉘어 있고 순서도 뒤섞여 있어, 단순히 경도 순으로만
+  /// 정렬하면 위/경도가 들쭉날쭉해서 리본 폴리곤이 스스로 꼬입니다(자기교차).
+  /// 그래서 경도 구간을 일정 폭으로 나눠(버킷) 구간별 평균 위도만 남기는 방식으로
+  /// 각 강변을 "경도 하나당 위도 하나"인 매끄러운 곡선으로 만든 뒤 리본을 만듭니다.
+  List<LatLng> _buildRiverPolygon(List<(String, RoadLinkGeometry)> links) {
+    final northBank = <LatLng>[];
+    final southBank = <LatLng>[];
+    for (final (roadName, link) in links) {
+      if (roadName == '강변북로') northBank.addAll(link.points);
+      if (roadName == '올림픽대로') southBank.addAll(link.points);
+    }
+    if (northBank.isEmpty || southBank.isEmpty) return [];
+
+    final northCurve = _smoothByLongitude(northBank);
+    final southCurve = _smoothByLongitude(southBank);
+    if (northCurve.isEmpty || southCurve.isEmpty) return [];
+
+    return [...northCurve, ...southCurve.reversed];
+  }
+
+  /// [points]를 경도 기준 [bucketCount]개 구간으로 나눠 구간별 평균 좌표만 남긴,
+  /// 경도 오름차순의 매끄러운 곡선을 반환합니다.
+  List<LatLng> _smoothByLongitude(List<LatLng> points, {int bucketCount = 60}) {
+    if (points.isEmpty) return [];
+    var minLng = points.first.longitude;
+    var maxLng = points.first.longitude;
+    for (final p in points) {
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    final span = maxLng - minLng;
+    if (span <= 0) return [];
+
+    final sumLat = List<double>.filled(bucketCount, 0);
+    final sumLng = List<double>.filled(bucketCount, 0);
+    final count = List<int>.filled(bucketCount, 0);
+    for (final p in points) {
+      var bucket = ((p.longitude - minLng) / span * bucketCount).floor();
+      if (bucket < 0) bucket = 0;
+      if (bucket >= bucketCount) bucket = bucketCount - 1;
+      sumLat[bucket] += p.latitude;
+      sumLng[bucket] += p.longitude;
+      count[bucket]++;
+    }
+
+    return [
+      for (var i = 0; i < bucketCount; i++)
+        if (count[i] > 0) LatLng(sumLat[i] / count[i], sumLng[i] / count[i]),
+    ];
   }
 
   @override
@@ -102,6 +171,7 @@ class _MapScreenState extends State<MapScreen> {
     if (!mounted) return traffic;
     setState(() {
       _statusByRoad = statusByRoad;
+      _riverPolygon = _buildRiverPolygon(links);
       _segments = [
         for (final (roadName, link) in links)
           RoadSegment(
@@ -337,6 +407,8 @@ class _MapScreenState extends State<MapScreen> {
                               segments: paintSegments,
                               congestionClusters: clusters,
                               landmarks: visibleLandmarks,
+                              districts: _districts,
+                              riverPolygon: _riverPolygon,
                               myLocation: _myLocation,
                               myHeading: _myHeading,
                             ),

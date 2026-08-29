@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../models/district.dart';
 import '../models/landmark.dart';
 import '../models/lat_lng.dart';
 
@@ -155,6 +156,8 @@ class RoadDiagramPainter extends CustomPainter {
   final List<RoadSegment> segments;
   final List<CongestionCluster> congestionClusters;
   final List<Landmark> landmarks;
+  final List<District> districts;
+  final List<LatLng> riverPolygon;
   final LatLng? myLocation;
   final double? myHeading;
 
@@ -163,6 +166,8 @@ class RoadDiagramPainter extends CustomPainter {
     required this.segments,
     required this.congestionClusters,
     this.landmarks = const [],
+    this.districts = const [],
+    this.riverPolygon = const [],
     this.myLocation,
     this.myHeading,
   });
@@ -171,6 +176,40 @@ class RoadDiagramPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final backgroundPaint = Paint()..color = const Color(0xFFF5F2EA);
     canvas.drawRect(Offset.zero & size, backgroundPaint);
+
+    // 자치구 경계 (매우 간략한 회색 윤곽선) — 도로보다 먼저 그려 배경처럼 깔립니다.
+    for (final district in districts) {
+      if (district.boundary.length < 2) continue;
+      final path = Path();
+      final first = projection.project(district.boundary.first);
+      path.moveTo(first.dx, first.dy);
+      for (final point in district.boundary.skip(1)) {
+        final offset = projection.project(point);
+        path.lineTo(offset.dx, offset.dy);
+      }
+      path.close();
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = const Color(0xFFCFC8B0)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
+      );
+    }
+
+    // 한강 (강변북로/올림픽대로 두 도로 좌표 사이 영역을 옅은 파랑으로 채워
+    // 아주 간략하게 표현합니다).
+    if (riverPolygon.length >= 3) {
+      final path = Path();
+      final first = projection.project(riverPolygon.first);
+      path.moveTo(first.dx, first.dy);
+      for (final point in riverPolygon.skip(1)) {
+        final offset = projection.project(point);
+        path.lineTo(offset.dx, offset.dy);
+      }
+      path.close();
+      canvas.drawPath(path, Paint()..color = const Color(0xFFBFD8E8));
+    }
 
     for (final segment in segments) {
       if (segment.points.length < 2) continue;
@@ -300,6 +339,8 @@ class RoadDiagramPainter extends CustomPainter {
     return oldDelegate.segments != segments ||
         oldDelegate.congestionClusters != congestionClusters ||
         oldDelegate.landmarks != landmarks ||
+        oldDelegate.districts != districts ||
+        oldDelegate.riverPolygon != riverPolygon ||
         oldDelegate.myLocation != myLocation ||
         oldDelegate.myHeading != myHeading;
   }
